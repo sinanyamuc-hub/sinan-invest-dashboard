@@ -17,30 +17,29 @@ market_choice = st.sidebar.selectbox(
     ["Borsa İstanbul (BIST)", "ABD Borsaları (Wall Street)", "TEFAS Fon Analizi"]
 )
 
-# Pazara göre sol menü filtreleri değişir
 if market_choice == "Borsa İstanbul (BIST)":
     st.sidebar.subheader("BIST Filtreleri")
-    pe_limit = st.sidebar.slider("Maksimum F/K", 5, 50, 12)
-    roe_min = st.sidebar.slider("Minimum ROE (%)", 0, 100, 30)
-    div_min = st.sidebar.slider("Minimum Temettü (%)", 0, 15, 4)
-    mcap_min = st.sidebar.number_input("Min. Piyasa Değeri (Milyar TL)", value=10)
+    pe_limit = st.sidebar.slider("Maksimum F/K", 5, 50, 12, help="Fiyat/Kazanç Oranı: Şirketin güncel piyasa değerinin yıllık net kârına oranıdır. Şirketin kendini kaç yılda amorti edeceğini gösterir. Düşük olması hissenin 'ucuz' olabileceğine işarettir.")
+    roe_min = st.sidebar.slider("Minimum ROE (%)", 0, 100, 30, help="Özkaynak Kârlılığı (Return on Equity): Şirketin kendi öz sermayesiyle ne kadar verimli kâr ürettiğini gösterir. Yüksek olması her zaman tercih sebebidir ve yönetimin kalitesini gösterir.")
+    div_min = st.sidebar.slider("Minimum Temettü (%)", 0, 15, 4, help="Temettü Verimi: Şirketin dağıttığı kâr payının hisse fiyatına oranıdır. Yüksek ve düzenli temettü, nakit akışı güçlü, kârını paylaşan oturmuş şirketleri işaret eder.")
+    mcap_min = st.sidebar.number_input("Min. Piyasa Değeri (Milyar TL)", value=10, help="Şirketin borsadaki toplam değeridir (Hisse Fiyatı x Toplam Hisse Adedi). Çok küçük şirketler spekülasyona açık olabilir, büyük tahtalar (şirketler) daha defansiftir.")
 
 elif market_choice == "ABD Borsaları (Wall Street)":
     st.sidebar.subheader("ABD Filtreleri")
-    pe_limit = st.sidebar.slider("Maksimum F/K", 5, 60, 25)
-    roe_min = st.sidebar.slider("Minimum ROE (%)", 0, 100, 25)
-    div_min = st.sidebar.slider("Minimum Temettü (%)", 0.0, 10.0, 3.0, step=0.5)
-    mcap_min = st.sidebar.number_input("Min. Piyasa Değeri (Milyar Dolar)", value=10)
+    pe_limit = st.sidebar.slider("Maksimum F/K", 5, 60, 25, help="Price/Earnings (P/E) Ratio: Şirketin kendini kaç yılda amorti edeceği. ABD teknoloji şirketlerinde büyüme beklentisinden dolayı BIST'e göre genelde daha yüksektir.")
+    roe_min = st.sidebar.slider("Minimum ROE (%)", 0, 100, 25, help="Return on Equity: Şirketin sermayesini kullanma verimliliği. Yüksek olması rekabet avantajına sahip olduğunu gösterir.")
+    div_min = st.sidebar.slider("Minimum Temettü (%)", 0.0, 10.0, 3.0, step=0.5, help="Dividend Yield: Dağıtılan nakit kâr payının hisse fiyatına oranı. ABD'de enflasyon düşük olduğundan %3-4 arası temettü verimi oldukça iyidir.")
+    mcap_min = st.sidebar.number_input("Min. Piyasa Değeri (Milyar Dolar)", value=10, help="Şirketin toplam büyüklüğü (Market Cap). 10 Milyar $ ve üzeri şirketler 'Large Cap' (Büyük Ölçekli) olarak kabul edilir ve daha güvenlidir.")
 
-else: # TEFAS Seçildiyse
+else:
     st.sidebar.subheader("Fon Filtreleri")
-    fund_return_min = st.sidebar.slider("Min. 1 Yıllık Getiri (%)", 30, 250, 80)
-    fund_mcap_min = st.sidebar.number_input("Min. Fon Büyüklüğü (Milyon TL)", value=500)
+    fund_return_min = st.sidebar.slider("Min. 1 Yıllık Getiri (%)", 30, 250, 80, help="Fonun son 1 yıl içinde (bugünden tam 365 gün geriye) yatırımcısına sağladığı net getiri oranıdır.")
+    fund_mcap_min = st.sidebar.number_input("Min. Fon Büyüklüğü (Milyon TL)", value=500, help="Fonun yönettiği toplam paradır (AUM). 500 Milyon TL ve üzeri olması, tasfiye riskini düşürür ve yönetim gideri kesintilerinin yatırımcı başına düşen payını azaltır.")
 
 
 # --- ARKA PLAN FONKSİYONLARI ---
 
-@st.cache_data(ttl=600) # Veriyi 10 dk önbellekte tutar, hızı artırır
+@st.cache_data(ttl=600)
 def fetch_tradingview_data(market_code, filter_ops):
     url = f'https://scanner.tradingview.com/{market_code}/scan?label-product=screener-stock'
     headers = {'Content-Type': 'application/json'}
@@ -63,37 +62,58 @@ def fetch_tradingview_data(market_code, filter_ops):
     except:
         return []
 
-@st.cache_data(ttl=3600) # TEFAS verisi saatte 1 güncellenir
+@st.cache_data(ttl=3600) 
 def fetch_tefas_data():
     tefas = Crawler()
     bugun = datetime.now()
-    bes_gun_once = bugun - timedelta(days=5)
+    # Hafta sonu ve resmi tatilleri atlamak için aralığı 10 güne çıkarıyoruz
+    on_gun_once = bugun - timedelta(days=10)
     bir_yil_once = bugun - timedelta(days=365)
-    bir_yil_bes_gun_once = bir_yil_once - timedelta(days=5)
+    bir_yil_on_gun_once = bir_yil_once - timedelta(days=10)
     
-    # Güncel veri ve Eski Veri Çekimi
-    guncel = tefas.fetch(start=bes_gun_once.strftime("%Y-%m-%d"), end=bugun.strftime("%Y-%m-%d"), columns=["code", "title", "price", "market_cap", "number_of_investors"], kind="YAT")
-    guncel['date'] = pd.to_datetime(guncel['date'])
-    guncel_df = guncel[guncel['date'] == guncel['date'].max()].copy()
-    
-    eski = tefas.fetch(start=bir_yil_bes_gun_once.strftime("%Y-%m-%d"), end=bir_yil_once.strftime("%Y-%m-%d"), columns=["code", "price"], kind="YAT")
-    eski['date'] = pd.to_datetime(eski['date'])
-    eski_df = eski[eski['date'] == eski['date'].max()].copy().rename(columns={"price": "eski_fiyat"})
-    
-    # Portföy Dağılımı (Hisse, Yabancı Hisse, Maden)
-    dagilim = tefas.fetch(start=bes_gun_once.strftime("%Y-%m-%d"), end=bugun.strftime("%Y-%m-%d"), kind="YAT", columns=["code", "stock", "foreign_stock", "precious_metals"])
-    dagilim['date'] = pd.to_datetime(dagilim['date'])
-    dagilim_df = dagilim[dagilim['date'] == dagilim['date'].max()].copy()
-    
-    # Birleştirme ve Matematik
-    df = pd.merge(guncel_df, eski_df[['code', 'eski_fiyat']], on='code', how='inner')
-    final_df = pd.merge(df, dagilim_df[['code', 'stock', 'foreign_stock', 'precious_metals']], on='code', how='left')
-    
-    for col in ['price', 'eski_fiyat', 'market_cap', 'number_of_investors', 'stock', 'foreign_stock', 'precious_metals']:
-        final_df[col] = pd.to_numeric(final_df[col], errors='coerce')
+    try:
+        # 1. Güncel Veri Çekimi
+        guncel = tefas.fetch(start=on_gun_once.strftime("%Y-%m-%d"), end=bugun.strftime("%Y-%m-%d"), columns=["code", "title", "price", "market_cap", "number_of_investors"], kind="YAT")
+        if guncel is None or guncel.empty or 'date' not in guncel.columns:
+            raise ValueError("TEFAS şu an veri döndürmüyor (Sistem güncellemesi veya uzun tatil arası).")
+            
+        guncel['date'] = pd.to_datetime(guncel['date'])
+        guncel_df = guncel[guncel['date'] == guncel['date'].max()].copy()
         
-    final_df['1Y_Getiri_%'] = ((final_df['price'] - final_df['eski_fiyat']) / final_df['eski_fiyat']) * 100
-    return final_df
+        # 2. Eski Veri Çekimi
+        eski = tefas.fetch(start=bir_yil_on_gun_once.strftime("%Y-%m-%d"), end=bir_yil_once.strftime("%Y-%m-%d"), columns=["code", "price"], kind="YAT")
+        if eski is None or eski.empty or 'date' not in eski.columns:
+            raise ValueError("TEFAS 1 yıl önceki tarihi döndüremedi.")
+            
+        eski['date'] = pd.to_datetime(eski['date'])
+        eski_df = eski[eski['date'] == eski['date'].max()].copy().rename(columns={"price": "eski_fiyat"})
+        
+        # 3. Portföy Dağılımı
+        dagilim = tefas.fetch(start=on_gun_once.strftime("%Y-%m-%d"), end=bugun.strftime("%Y-%m-%d"), kind="YAT", columns=["code", "stock", "foreign_stock", "precious_metals"])
+        if dagilim is None or dagilim.empty or 'date' not in dagilim.columns:
+             dagilim_df = pd.DataFrame(columns=["code", "stock", "foreign_stock", "precious_metals"])
+        else:
+            dagilim['date'] = pd.to_datetime(dagilim['date'])
+            dagilim_df = dagilim[dagilim['date'] == dagilim['date'].max()].copy()
+        
+        # 4. Birleştirme ve Matematik
+        df = pd.merge(guncel_df, eski_df[['code', 'eski_fiyat']], on='code', how='inner')
+        if not dagilim_df.empty:
+            final_df = pd.merge(df, dagilim_df[['code', 'stock', 'foreign_stock', 'precious_metals']], on='code', how='left')
+        else:
+            final_df = df
+            for col in ['stock', 'foreign_stock', 'precious_metals']: final_df[col] = 0
+            
+        for col in ['price', 'eski_fiyat', 'market_cap', 'number_of_investors', 'stock', 'foreign_stock', 'precious_metals']:
+            if col in final_df.columns:
+                final_df[col] = pd.to_numeric(final_df[col], errors='coerce')
+                
+        final_df['1Y_Getiri_%'] = ((final_df['price'] - final_df['eski_fiyat']) / final_df['eski_fiyat']) * 100
+        return final_df
+        
+    except Exception as e:
+        raise Exception(f"Sistem Hatası: {str(e)}")
+
 
 # --- ANA EKRAN GÖSTERİMLERİ ---
 
@@ -110,7 +130,7 @@ if market_choice == "Borsa İstanbul (BIST)":
         data = fetch_tradingview_data("turkey", filters)
         
     if data:
-        results = [{"Hisse": d['d'][0].replace("BIST:", ""), "Fiyat (TL)": d['d'][1], "F/K": round(d['d'][2],2), "ROE (%)": round(d['d'][3],2), "Temettü (%)": round(d['d'][4],2), "Borç/Özk.": round(d['d'][5],2), "PD (Milyar TL)": round(d['d'][6]/1e9, 2), "Sektör": d['d'][7]} for d in data]
+        results = [{"Hisse": d['d'][0].replace("BIST:", ""), "Fiyat (TL)": d['d'][1], "F/K": round(d['d'][2],2) if d['d'][2] else "-", "ROE (%)": round(d['d'][3],2) if d['d'][3] else "-", "Temettü (%)": round(d['d'][4],2) if d['d'][4] else 0, "Borç/Özk.": round(d['d'][5],2) if d['d'][5] else "-", "PD (Milyar TL)": round(d['d'][6]/1e9, 2) if d['d'][6] else "-", "Sektör": d['d'][7]} for d in data]
         st.dataframe(pd.DataFrame(results), use_container_width=True)
     else:
         st.warning("Bu kriterlere uygun BIST hissesi bulunamadı. Lütfen sol menüden filtreleri esnetin.")
@@ -128,7 +148,7 @@ elif market_choice == "ABD Borsaları (Wall Street)":
         data = fetch_tradingview_data("america", filters)
         
     if data:
-        results = [{"Hisse": d['d'][0], "Fiyat ($)": d['d'][1], "F/K": round(d['d'][2],2), "ROE (%)": round(d['d'][3],2), "Temettü (%)": round(d['d'][4],2) if d['d'][4] else 0, "Borç/Özk.": round(d['d'][5],2), "PD (Milyar $)": round(d['d'][6]/1e9, 2), "Sektör": d['d'][7]} for d in data]
+        results = [{"Hisse": d['d'][0], "Fiyat ($)": d['d'][1], "F/K": round(d['d'][2],2) if d['d'][2] else "-", "ROE (%)": round(d['d'][3],2) if d['d'][3] else "-", "Temettü (%)": round(d['d'][4],2) if d['d'][4] else 0, "Borç/Özk.": round(d['d'][5],2) if d['d'][5] else "-", "PD (Milyar $)": round(d['d'][6]/1e9, 2) if d['d'][6] else "-", "Sektör": d['d'][7]} for d in data]
         st.dataframe(pd.DataFrame(results), use_container_width=True)
     else:
         st.warning("Bu kriterlere uygun ABD hissesi bulunamadı. Lütfen sol menüden filtreleri esnetin.")
